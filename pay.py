@@ -16,9 +16,10 @@ import telebot
 from telebot import types
 
 # ----------------- CONFIGURATION -----------------
+# BotFather theke pawa notun valid token ekhane boshun
 BOT_TOKEN = "8737334045:AAEpU1UwBKlcKocRvUoPNfLg5c3xlHI0Gjc"
 ADMIN_ID = 5624448603
-BOT_USERNAME = "@paymentapisajidbot"
+BOT_USERNAME = "paymentapisajidbot"
 
 PORT = int(os.environ.get("PORT", 5000))
 DB_PATH = "payment_hub.db"
@@ -367,7 +368,7 @@ def handle_menu_buttons(message):
     user_id = message.from_user.id
     fetch_master_settings()
 
-    # ১. সাবস্ক্রিপশন প্ল্যান দেখা
+    # Subscription Plans
     if message.text == "💎 Upgrade / Subscribe":
         bot.send_message(
             chat_id,
@@ -377,7 +378,7 @@ def handle_menu_buttons(message):
         )
         return
 
-    # ২. সাবস্ক্রিপশন স্ট্যাটাস চেক
+    # Subscription Status
     elif message.text == "📅 Subscription Status":
         subscribed, exp_date = is_subscribed(user_id)
         if subscribed:
@@ -398,7 +399,7 @@ def handle_menu_buttons(message):
             )
         return
 
-    # ৩. শুধুমাত্র 🔗 Connect Bot চাপলে সাবস্ক্রিপশন চেক হবে
+    # Connect Bot: Only Gate For Paid Users
     elif message.text == "🔗 Connect Bot":
         subscribed, _ = is_subscribed(user_id)
         if not subscribed:
@@ -419,7 +420,7 @@ def handle_menu_buttons(message):
         )
         return
 
-    # ৪. বাকি সব ফিচার ওপেন থাকবে (ইউজার ট্রাস্ট বাড়ানোর জন্য)
+    # UPI Settings
     elif message.text == "💳 Set UPI":
         user_states[chat_id] = {"step": "AWAITING_UPI"}
         curr = get_setting("upi_id", "Not Configured")
@@ -430,6 +431,7 @@ def handle_menu_buttons(message):
             reply_markup=get_main_keyboard()
         )
 
+    # Email Settings
     elif message.text == "📧 Set Email":
         user_states[chat_id] = {"step": "AWAITING_GMAIL"}
         curr_e = get_setting("email_user", "Not Configured")
@@ -440,6 +442,7 @@ def handle_menu_buttons(message):
             reply_markup=get_main_keyboard()
         )
 
+    # Connected Bots List
     elif message.text == "🤖 Bot List":
         user_states.pop(chat_id, None)
         with get_db() as conn:
@@ -458,6 +461,7 @@ def handle_menu_buttons(message):
 
         bot.send_message(chat_id, "📋 <b>Your Connected Bots:</b>\n\nSelect a bot to manage:", reply_markup=markup)
 
+    # Transactions Report
     elif message.text == "📊 Transactions":
         user_states.pop(chat_id, None)
         with get_db() as conn:
@@ -478,16 +482,31 @@ def handle_menu_buttons(message):
 
         bot.send_message(chat_id, msg, reply_markup=get_main_keyboard())
 
+    # Full Detailed Tutorial Section
     elif message.text == "📖 Tutorial":
         user_states.pop(chat_id, None)
         tutorial_text = (
-            "<b>📖 How to Use BotVerse Payment Hub:</b>\n\n"
-            "1. Tap <b>💳 Set UPI</b>: Add your personal UPI to collect money.\n"
-            "2. Tap <b>📧 Set Email</b>: Link Gmail & 16-digit App Password for auto-UTR detection.\n"
-            "3. Tap <b>🔗 Connect Bot</b>: Add your bot token to start automated payments!\n\n"
-            "💡 Everything is completely verified in real time without any delay."
+            "<b>📖 Complete Setup Tutorial (A-Z Guide)</b>\n\n"
+            "<b>1. Generating Google 16-Digit App Password:</b>\n"
+            "• Open your browser and visit: <a href='https://myaccount.google.com/security'>Google Account Security</a>.\n"
+            "• Ensure that <b>2-Step Verification</b> is turned <b>ON</b>.\n"
+            "• Search for <b>App passwords</b> (or use direct link: <a href='https://myaccount.google.com/apppasswords'>Google App Passwords</a>).\n"
+            "• Type an app name (e.g., <code>Payment Hub</code>) and click <b>Create</b>.\n"
+            "• Copy the generated 16-character code (e.g. <code>abcd efgh ijkl mnop</code>).\n\n"
+            "<b>2. Connecting Email & UPI:</b>\n"
+            "• Tap <b>📧 Set Email</b>: Submit the Gmail address that receives your bank or FamPay transaction alert emails, then enter the 16-digit Google App Password.\n"
+            "• Tap <b>💳 Set UPI</b>: Submit your personal or business receiving UPI ID (e.g. <code>yourname@fam</code> or <code>number@paytm</code>).\n\n"
+            "<b>3. Connecting Your Child Bots:</b>\n"
+            "• Tap <b>💎 Upgrade / Subscribe</b> to activate a subscription tier if you haven't yet.\n"
+            "• Tap <b>🔗 Connect Bot</b> and paste the Telegram Bot Token obtained from @BotFather.\n"
+            "• The system verifies the token and generates a unique <code>API Key</code>.\n"
+            "• Paste that <code>API Key</code> inside your client bot script to enable automated payments.\n\n"
+            "<b>4. How Automatic Verification Works:</b>\n"
+            "• When a user makes a payment to your dynamic UPI QR, your bank sends an instant email alert to your connected Gmail.\n"
+            "• The background IMAP engine reads the email, extracts the 12-digit UTR and payment amount in real-time.\n"
+            "• The moment the buyer submits their 12-digit UTR, payment is verified and confirmed automatically within seconds!"
         )
-        bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard())
+        bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
 
 # ----------------- SUBSCRIPTION PLAN CALLBACKS & DYNAMIC QR -----------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
@@ -712,7 +731,7 @@ def handle_text_inputs(message):
                 wait_msg.message_id
             )
         except Exception as e:
-            bot.edit_message_text(f"⚠️ Error verifying bot token: {e}", chat_id, wait_msg.message_id)
+            bot.edit_message_text(f"⚠️️ Error verifying bot token: {e}", chat_id, wait_msg.message_id)
 
 # ----------------- CALLBACK QUERY HANDLER -----------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("view_"))
