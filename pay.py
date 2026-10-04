@@ -8,6 +8,7 @@ import sqlite3
 import imaplib
 import logging
 import threading
+import urllib.parse
 import requests
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
@@ -17,20 +18,20 @@ from telebot import types
 # ----------------- CONFIGURATION -----------------
 BOT_TOKEN = "8737334045:AAFa_BKZATJ1gzauyDZWQee7BDSs84LMo9k"
 ADMIN_ID = 5624448603
-BOT_USERNAME = "BotVerse_Pay_Bot"  # Payment bot-er username (@ chara)
+BOT_USERNAME = "BotVerse_Pay_Bot"
 
 PORT = int(os.environ.get("PORT", 5000))
 DB_PATH = "payment_hub.db"
 IMAP_SERVER = "imap.gmail.com"
 
-# Render-e running thaka Master Admin Bot-er URL (shesh-e slash chara)
+# Master Admin Bot Base URL (Without trailing slash)
 ADMIN_API_URL = "https://botverse-admin-bot.onrender.com"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 
-admin_states = {}
+user_states = {}
 
 # ----------------- DATABASE SETUP -----------------
 def get_db():
@@ -74,27 +75,25 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS user_subscriptions (
                 user_id INTEGER PRIMARY KEY,
+                plan_name TEXT,
                 expires_at TIMESTAMP
             );
         """)
 
-        # Auto migration check
-        try:
-            conn.execute("ALTER TABLE connected_bots ADD COLUMN owner_id INTEGER")
-        except sqlite3.OperationalError:
-            pass
-
+        # Default Pricing & Admin Settings
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('upi_id', 'not_set@fam')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_upi', 'admin@fam')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('email_user', '')")
         conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('email_pass', '')")
-        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('sub_price', '99')")
-        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('sub_days', '30')")
-        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('admin_upi', 'admin@fam')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('price_1m', '49')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('price_3m', '129')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('price_6m', '229')")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('price_12m', '399')")
     logging.info("Database initialized successfully.")
 
 init_db()
 
-# ----------------- SETTINGS & SUBSCRIPTION HELPERS -----------------
+# ----------------- CONFIG & SUBSCRIPTION HELPERS -----------------
 def get_setting(key, default=""):
     with get_db() as conn:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
@@ -104,7 +103,6 @@ def set_setting(key, value):
     with get_db() as conn:
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
-# Real-time Master Admin Bot theke settings ana
 def fetch_master_settings():
     try:
         res = requests.get(f"{ADMIN_API_URL}/api/get_settings/{BOT_USERNAME}", timeout=5)
@@ -129,31 +127,39 @@ def is_subscribed(user_id):
                 pass
     return False, None
 
-# ----------------- KEYBOARD MARKUP -----------------
-# User jodi subscribed hoy ba owner hoy
+# ----------------- KEYBOARD MENUS -----------------
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    btn_sub_plans = types.KeyboardButton("💎 Upgrade / Subscribe")
+    btn_sub_status = types.KeyboardButton("📅 Subscription Status")
     btn_upi = types.KeyboardButton("💳 Set UPI")
     btn_email = types.KeyboardButton("📧 Set Email")
     btn_api = types.KeyboardButton("🔑 Generate API")
     btn_connect = types.KeyboardButton("🔗 Connect Bot")
     btn_list = types.KeyboardButton("🤖 Bot List")
     btn_tx = types.KeyboardButton("📊 Transactions")
-    btn_sub = types.KeyboardButton("📅 YOUR SUBSCRIPTION")
     btn_tutorial = types.KeyboardButton("📖 Tutorial")
-    
+
+    markup.add(btn_sub_plans, btn_sub_status)
     markup.add(btn_upi, btn_email)
     markup.add(btn_api, btn_connect)
     markup.add(btn_list, btn_tx)
-    markup.add(btn_sub, btn_tutorial)
+    markup.add(btn_tutorial)
     return markup
 
-# User subscribed na thakle locked keyboard
-def get_unsubscribed_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    btn_buy = types.KeyboardButton("💎 BUY SUBSCRIPTION 💎")
-    btn_sub = types.KeyboardButton("📅 YOUR SUBSCRIPTION")
-    markup.add(btn_buy, btn_sub)
+def get_plans_inline_keyboard():
+    p1 = get_setting("price_1m", "49")
+    p3 = get_setting("price_3m", "129")
+    p6 = get_setting("price_6m", "229")
+    p12 = get_setting("price_12m", "399")
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(f"⭐ 1 Month Access - ₹{p1}", callback_data="buy_1m"),
+        types.InlineKeyboardButton(f"🔥 3 Months Access - ₹{p3}", callback_data="buy_3m"),
+        types.InlineKeyboardButton(f"💎 6 Months Access - ₹{p6}", callback_data="buy_6m"),
+        types.InlineKeyboardButton(f"👑 12 Months Access - ₹{p12}", callback_data="buy_12m")
+    )
     return markup
 
 # ----------------- DYNAMIC EMAIL IMAP WORKER -----------------
@@ -207,12 +213,12 @@ def imap_worker():
                                             "INSERT INTO email_ledger (utr, amount, raw_text, claimed) VALUES (?, ?, ?, 0)",
                                             (utr, amount, body[:150])
                                         )
-                                        logging.info(f"Payment detected: ₹{amount} | UTR: {utr}")
+                                        logging.info(f"Detected payment alert: ₹{amount} | UTR: {utr}")
                                     except sqlite3.IntegrityError:
                                         pass
             mail.logout()
         except Exception as e:
-            logging.error(f"IMAP sync issue: {e}")
+            logging.error(f"IMAP Sync issue: {e}")
         time.sleep(10)
 
 # ----------------- FLASK REST API ROUTES -----------------
@@ -232,10 +238,9 @@ def get_active_upi():
         if not bot_row:
             return jsonify({"status": "error", "message": "Invalid API key"}), 403
 
-        # Sub check for the bot owner
         subbed, _ = is_subscribed(bot_row["owner_id"] if bot_row["owner_id"] else ADMIN_ID)
         if not subbed:
-            return jsonify({"status": "error", "message": "Bot owner subscription expired!"}), 403
+            return jsonify({"status": "error", "message": "Bot owner subscription has expired."}), 403
 
         active_upi = get_setting("upi_id", "not_set@fam")
 
@@ -271,17 +276,14 @@ def verify_utr():
 
         ledger_row = conn.execute("SELECT amount, claimed FROM email_ledger WHERE utr = ?", (utr,)).fetchone()
         if not ledger_row:
-            return jsonify({"status": "not_found", "message": "Transaction not found in ledger yet. Please try again in 30 seconds."}), 404
+            return jsonify({"status": "not_found", "message": "Transaction not detected yet. Please allow 30 seconds."}), 404
 
         received_amount = ledger_row["amount"]
         if ledger_row["claimed"] == 1:
             return jsonify({"status": "already_used", "message": "This UTR has already been claimed."}), 400
 
         if received_amount < expected_amount:
-            return jsonify({
-                "status": "insufficient_amount",
-                "message": f"Paid ₹{received_amount}, expected ₹{expected_amount}"
-            }), 400
+            return jsonify({"status": "insufficient_amount", "message": f"Received ₹{received_amount}, expected ₹{expected_amount}"}), 400
 
         conn.execute("UPDATE email_ledger SET claimed = 1 WHERE utr = ?", (utr,))
         conn.execute("INSERT INTO transactions (utr, bot_id, user_id, amount) VALUES (?, ?, ?, ?)",
@@ -290,19 +292,19 @@ def verify_utr():
     try:
         bot.send_message(
             ADMIN_ID,
-            f"<b>✅ Payment Received & Verified!</b>\n\n"
-            f"<b>Source Bot:</b> {bot_name} (<code>{bot_id}</code>)\n"
-            f"<b>User ID:</b> <code>{user_id}</code>\n"
+            f"<b>✅ Client Payment Verified!</b>\n\n"
+            f"<b>Bot:</b> {bot_name} (<code>{bot_id}</code>)\n"
+            f"<b>Customer ID:</b> <code>{user_id}</code>\n"
             f"<b>Amount:</b> ₹{received_amount:.2f}\n"
             f"<b>UTR:</b> <code>{utr}</code>",
             reply_markup=get_main_keyboard()
         )
     except Exception as e:
-        logging.error(f"Telegram notification error: {e}")
+        logging.error(f"Notification error: {e}")
 
     return jsonify({"status": "success", "amount": received_amount, "utr": utr}), 200
 
-# ----------------- ADMIN MASTER BOT CONNECT (/api) -----------------
+# ----------------- MASTER ADMIN CONNECT (/api) -----------------
 @bot.message_handler(commands=["api"])
 def cmd_api_register(message):
     if message.from_user.id != ADMIN_ID:
@@ -310,14 +312,16 @@ def cmd_api_register(message):
 
     code = f"PAY_{secrets.token_hex(3).upper()}"
     default_config = {
-        "sub_price": int(get_setting("sub_price", 99)),
-        "sub_days": int(get_setting("sub_days", 30)),
-        "admin_upi": get_setting("admin_upi", "admin@fam")
+        "admin_upi": get_setting("admin_upi", "admin@fam"),
+        "price_1m": int(get_setting("price_1m", 49)),
+        "price_3m": int(get_setting("price_3m", 129)),
+        "price_6m": int(get_setting("price_6m", 229)),
+        "price_12m": int(get_setting("price_12m", 399))
     }
 
     payload = {
         "auth_code": code,
-        "bot_name": "UPI Payment Hub Bot",
+        "bot_name": "UPI Payment Hub",
         "bot_username": BOT_USERNAME,
         "settings": default_config
     }
@@ -327,55 +331,39 @@ def cmd_api_register(message):
         if res.status_code == 200:
             bot.reply_to(
                 message,
-                f"✅ <b>Payment Bot Connected to Admin Hub!</b>\n\n"
-                f"🔑 Code: <code>{code}</code>\n\n"
-                f"Now send this command in your Master Admin Bot:\n"
+                f"✅ <b>Payment Engine Connected to Master Hub!</b>\n\n"
+                f"🔑 <b>Authentication Code:</b> <code>{code}</code>\n\n"
+                f"Send this command to your Master Admin Bot:\n"
                 f"<code>/add {code}</code>",
                 parse_mode="HTML"
             )
         else:
-            bot.reply_to(message, f"❌ Master Server Error: HTTP {res.status_code}")
+            bot.reply_to(message, f"❌ Master Hub Server Error: HTTP {res.status_code}")
     except Exception as e:
-        bot.reply_to(message, f"❌ Failed to reach Master Server: {e}")
+        bot.reply_to(message, f"❌ Connection Error: {e}")
 
-# ----------------- TELEGRAM BOT HANDLER -----------------
+# ----------------- START COMMAND -----------------
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
     user_id = message.from_user.id
-    admin_states.pop(message.chat.id, None)
+    user_states.pop(message.chat.id, None)
     fetch_master_settings()
 
     subscribed, exp_date = is_subscribed(user_id)
 
-    if subscribed:
-        current_upi = get_setting("upi_id", "Not Set")
-        current_email = get_setting("email_user", "Not Configured")
-        bot.send_message(
-            message.chat.id,
-            f"<b>🛡️ Payment Hub Control Panel</b>\n\n"
-            f"<b>Subscription:</b> Active (Till {exp_date})\n"
-            f"<b>Active UPI:</b> <code>{current_upi}</code>\n"
-            f"<b>Active Email:</b> <code>{current_email}</code>\n\n"
-            "Choose an action from the menu keyboard below:",
-            reply_markup=get_main_keyboard()
-        )
-    else:
-        price = get_setting("sub_price", "99")
-        days = get_setting("sub_days", "30")
-        bot.send_message(
-            message.chat.id,
-            f"🔒 <b>Welcome to Payment Hub Engine!</b>\n\n"
-            f"Ei bot use kore apni apnar Telegram bot-e automated UPI & UTR payment verify system add korte parben.\n\n"
-            f"📌 <b>Subscription Plan:</b>\n"
-            f"• <b>Price:</b> ₹{price}\n"
-            f"• <b>Validity:</b> {days} Days\n\n"
-            f"Full access unlock korte nicher boro <b>💎 BUY SUBSCRIPTION 💎</b> button-e click korun:",
-            reply_markup=get_unsubscribed_keyboard()
-        )
+    status_badge = f"<b>Active</b> (Valid until: <code>{exp_date}</code>)" if subscribed else "<b>Inactive / Expired</b> 🔒"
+
+    welcome_msg = (
+        f"<b>👋 Welcome to Payment Hub Automation</b>\n\n"
+        f"Automate UPI collections and instant UTR verifications for your Telegram bots.\n\n"
+        f"<b>Your Subscription Status:</b> {status_badge}\n\n"
+        f"Select an option from the menu below to get started:"
+    )
+    bot.send_message(message.chat.id, welcome_msg, reply_markup=get_main_keyboard())
 
 # ----------------- MENU BUTTON HANDLER -----------------
 @bot.message_handler(func=lambda m: m.text in [
-    "💎 BUY SUBSCRIPTION 💎", "📅 YOUR SUBSCRIPTION",
+    "💎 Upgrade / Subscribe", "📅 Subscription Status",
     "💳 Set UPI", "📧 Set Email", "🔑 Generate API", "🔗 Connect Bot", "🤖 Bot List", "📊 Transactions", "📖 Tutorial"
 ])
 def handle_menu_buttons(message):
@@ -383,97 +371,88 @@ def handle_menu_buttons(message):
     user_id = message.from_user.id
     fetch_master_settings()
 
-    # 1. Buy Subscription Button
-    if message.text == "💎 BUY SUBSCRIPTION 💎":
-        price = get_setting("sub_price", "99")
-        days = get_setting("sub_days", "30")
-        admin_upi = get_setting("admin_upi", "admin@fam")
-
-        msg = (
-            f"💎 <b>Payment Hub VIP Access</b>\n\n"
-            f"• <b>Price:</b> ₹{price}\n"
-            f"• <b>Validity:</b> {days} Days\n"
-            f"• <b>Admin UPI:</b> <code>{admin_upi}</code>\n\n"
-            f"👉 Uporer UPI ID-te ₹{price} send korun.\n"
-            f"Payment successful hole apnar 12-digit UTR number submit korun evabe:\n"
-            f"<code>/utr 123456789012</code>"
+    if message.text == "💎 Upgrade / Subscribe":
+        bot.send_message(
+            chat_id,
+            "<b>💎 Select Your Subscription Tier:</b>\n\n"
+            "Choose a plan below to unlock automated payment verifications for your bots:",
+            reply_markup=get_plans_inline_keyboard()
         )
-        bot.send_message(chat_id, msg, parse_mode="HTML")
         return
 
-    # 2. Check Subscription
-    elif message.text == "📅 YOUR SUBSCRIPTION":
+    elif message.text == "📅 Subscription Status":
         subscribed, exp_date = is_subscribed(user_id)
         if subscribed:
             bot.send_message(
                 chat_id,
-                f"✅ <b>Subscription Status: ACTIVE</b>\n\n"
-                f"⏳ Expiration Date: <code>{exp_date}</code>\n"
-                f"Apnar service smoothly running ache!",
-                parse_mode="HTML"
+                f"<b>✅ Subscription Status: Active</b>\n\n"
+                f"• <b>Access:</b> Full Premium Access\n"
+                f"• <b>Expiration:</b> <code>{exp_date}</code>\n\n"
+                "All your integrated bots and API hooks are functioning normally.",
+                reply_markup=get_main_keyboard()
             )
         else:
             bot.send_message(
                 chat_id,
-                "❌ <b>Subscription Status: INACTIVE</b>\n\n"
-                "Apnar kono active plan nei. Access pete '💎 BUY SUBSCRIPTION 💎' button-e click korun.",
-                reply_markup=get_unsubscribed_keyboard(),
-                parse_mode="HTML"
+                "<b>❌ Subscription Status: Inactive</b>\n\n"
+                "You do not have an active subscription plan.\n"
+                "Tap <b>💎 Upgrade / Subscribe</b> to choose a plan and activate your services.",
+                reply_markup=get_main_keyboard()
             )
         return
 
-    # Check lock for general hub features
+    # Subscription Gate for Functional Settings
     subscribed, _ = is_subscribed(user_id)
     if not subscribed:
         bot.send_message(
             chat_id,
-            "⛔ <b>Access Denied!</b>\n\nEi feature use korte subscription proyojon. Age subscription active korun.",
-            reply_markup=get_unsubscribed_keyboard(),
-            parse_mode="HTML"
+            "🔒 <b>Premium Access Required</b>\n\n"
+            "This configuration tool requires an active subscription.\n"
+            "Please tap <b>💎 Upgrade / Subscribe</b> to activate your account.",
+            reply_markup=get_main_keyboard()
         )
         return
 
-    # Subscribed User Options
     if message.text == "💳 Set UPI":
-        admin_states[chat_id] = {"step": "AWAITING_UPI"}
-        curr = get_setting("upi_id", "Not Set")
+        user_states[chat_id] = {"step": "AWAITING_UPI"}
+        curr = get_setting("upi_id", "Not Configured")
         bot.send_message(
             chat_id,
-            f"ℹ️ <b>Current UPI ID:</b> <code>{curr}</code>\n\n"
-            "Please send your new UPI ID (e.g., <code>yourname@fam</code>):",
+            f"ℹ️ <b>Active UPI ID:</b> <code>{curr}</code>\n\n"
+            "Please send the new UPI ID you want to receive payments on (e.g. <code>username@fam</code>):",
             reply_markup=get_main_keyboard()
         )
 
     elif message.text == "📧 Set Email":
-        admin_states[chat_id] = {"step": "AWAITING_GMAIL"}
+        user_states[chat_id] = {"step": "AWAITING_GMAIL"}
         curr_e = get_setting("email_user", "Not Configured")
         bot.send_message(
             chat_id,
-            f"📧 <b>Current Alert Email:</b> <code>{curr_e}</code>\n\n"
-            "Send the <b>Gmail address</b> that receives FamPay transaction alerts:",
+            f"📧 <b>Alert Email Address:</b> <code>{curr_e}</code>\n\n"
+            "Send your Gmail address that receives payment notification alerts:",
             reply_markup=get_main_keyboard()
         )
 
     elif message.text == "🔑 Generate API":
-        admin_states[chat_id] = {"step": "AWAITING_BOT_NAME_FOR_API"}
+        user_states[chat_id] = {"step": "AWAITING_BOT_NAME_FOR_API"}
         bot.send_message(
             chat_id,
-            "📝 <b>Enter Bot Name:</b>\n"
-            "Send the name of the bot you want to generate an API key for:",
+            "📝 <b>Create API Authorization Key</b>\n\n"
+            "Send the name of the client bot you wish to integrate:",
             reply_markup=get_main_keyboard()
         )
 
     elif message.text == "🔗 Connect Bot":
-        admin_states[chat_id] = {"step": "AWAITING_BOT_TOKEN"}
+        user_states[chat_id] = {"step": "AWAITING_BOT_TOKEN"}
         bot.send_message(
             chat_id,
-            "🤖 <b>Enter Bot Token:</b>\n\n"
-            "Send the Telegram Bot Token obtained from @BotFather:",
+            "🤖 <b>Connect Telegram Bot</b>\n\n"
+            "Send your Telegram Bot Token provided by @BotFather:",
             reply_markup=get_main_keyboard()
         )
 
     elif message.text == "🤖 Bot List":
-        admin_states.pop(chat_id, None)
+        user_states.pop(chat_id, None)
         with get_db() as conn:
             if user_id == ADMIN_ID:
                 bots = conn.execute("SELECT bot_id, bot_name FROM connected_bots").fetchall()
@@ -481,26 +460,26 @@ def handle_menu_buttons(message):
                 bots = conn.execute("SELECT bot_id, bot_name FROM connected_bots WHERE owner_id = ?", (user_id,)).fetchall()
 
         if not bots:
-            bot.send_message(chat_id, "🚫 No bots connected yet!", reply_markup=get_main_keyboard())
+            bot.send_message(chat_id, "🚫 No bots connected yet.", reply_markup=get_main_keyboard())
             return
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         for b in bots:
             markup.add(types.InlineKeyboardButton(f"🤖 {b['bot_name']}", callback_data=f"view_{b['bot_id']}"))
 
-        bot.send_message(chat_id, "📋 <b>Connected Bot List:</b>\n\nSelect a bot to view details or remove it:", reply_markup=markup)
+        bot.send_message(chat_id, "📋 <b>Integrated Bots:</b>\n\nSelect a bot below to review details:", reply_markup=markup)
 
     elif message.text == "📊 Transactions":
-        admin_states.pop(chat_id, None)
+        user_states.pop(chat_id, None)
         with get_db() as conn:
             stats = conn.execute("SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM transactions").fetchone()
             latest = conn.execute("SELECT utr, bot_id, amount, timestamp FROM transactions ORDER BY timestamp DESC LIMIT 5").fetchall()
 
         msg = (
             f"<b>📊 Lifetime Transaction Report</b>\n\n"
-            f"• <b>Total Count:</b> <code>{stats[0]}</code>\n"
-            f"• <b>Total Volume:</b> <code>₹{stats[1]:.2f}</code>\n\n"
-            f"<b>🕒 Last 5 Transactions:</b>\n"
+            f"• <b>Total Transactions:</b> <code>{stats[0]}</code>\n"
+            f"• <b>Processed Volume:</b> <code>₹{stats[1]:.2f}</code>\n\n"
+            f"<b>🕒 Recent Records:</b>\n"
         )
         if latest:
             for tx in latest:
@@ -511,92 +490,207 @@ def handle_menu_buttons(message):
         bot.send_message(chat_id, msg, reply_markup=get_main_keyboard())
 
     elif message.text == "📖 Tutorial":
-        admin_states.pop(chat_id, None)
+        user_states.pop(chat_id, None)
         tutorial_text = (
-            "<b>📖 Complete Setup Tutorial (A-Z Guide)</b>\n\n"
-            "<b>1. Generating Google 16-Digit App Password:</b>\n"
-            "• Open your browser and go to Google Security.\n"
-            "• Make sure 2-Step Verification is turned ON.\n"
-            "• Create an App password and copy the 16-character code.\n\n"
-            "<b>2. Connecting Email & UPI:</b>\n"
+            "<b>📖 Integration Guide & Workflow</b>\n\n"
+            "<b>1. Generate Google App Password:</b>\n"
+            "• Enable 2-Step Verification in Google Account Security.\n"
+            "• Create an App password and obtain the 16-character credential.\n\n"
+            "<b>2. Configure Credentials:</b>\n"
             "• Tap <b>📧 Set Email</b>: Provide your Gmail and 16-digit App Password.\n"
-            "• Tap <b>💳 Set UPI</b>: Provide your UPI ID.\n\n"
-            "<b>3. Connecting Client Bots:</b>\n"
-            "• Tap <b>🔗 Connect Bot</b> and paste the bot token from @BotFather."
+            "• Tap <b>💳 Set UPI</b>: Set your receiving UPI ID.\n\n"
+            "<b>3. Client Integration:</b>\n"
+            "• Tap <b>🔑 Generate API</b> or <b>🔗 Connect Bot</b> to link your child bots."
         )
-        bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+        bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard())
 
-# ----------------- UTR SUBMIT COMMAND -----------------
-@bot.message_handler(commands=["utr"])
-def handle_utr_submit(message):
-    user_id = message.from_user.id
-    parts = message.text.split()
-    if len(parts) < 2 or len(parts[1]) != 12:
-        bot.reply_to(message, "⚠️ Format: <code>/utr 123456789012</code>", parse_mode="HTML")
+# ----------------- SUBSCRIPTION PLAN CALLBACKS & DYNAMIC QR -----------------
+@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
+def handle_plan_selection(call):
+    plan_code = call.data.replace("buy_", "")
+    fetch_master_settings()
+
+    plans = {
+        "1m": {"days": 30, "price": float(get_setting("price_1m", 49)), "title": "1 Month"},
+        "3m": {"days": 90, "price": float(get_setting("price_3m", 129)), "title": "3 Months"},
+        "6m": {"days": 180, "price": float(get_setting("price_6m", 229)), "title": "6 Months"},
+        "12m": {"days": 365, "price": float(get_setting("price_12m", 399)), "title": "12 Months"}
+    }
+
+    selected = plans.get(plan_code)
+    if not selected:
+        bot.answer_callback_query(call.id, "Invalid tier.")
         return
 
-    utr = parts[1].strip()
-    fetch_master_settings()
-    days_to_add = int(get_setting("sub_days", 30))
-    exp_time = datetime.now() + timedelta(days=days_to_add)
-    exp_str = exp_time.strftime("%Y-%m-%d %H:%M:%S")
+    admin_upi = get_setting("admin_upi", "admin@fam")
+    amount = selected["price"]
+    days = selected["days"]
+    title = selected["title"]
 
-    with get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO user_subscriptions (user_id, expires_at) VALUES (?, ?)", (user_id, exp_str))
+    user_states[call.message.chat.id] = {
+        "step": "AWAITING_SUB_UTR",
+        "expected_amount": amount,
+        "days": days,
+        "title": title
+    }
 
-    bot.reply_to(
-        message,
-        f"🎉 <b>Subscription Activated Successfully!</b>\n\n"
-        f"UTR: <code>{utr}</code> verified.\n"
-        f"Valid Till: <code>{exp_str}</code> ({days_to_add} Days)\n\n"
-        "Ekhon apni nicher sob buttons use korte parben!",
-        reply_markup=get_main_keyboard(),
-        parse_mode="HTML"
+    # Generate Dynamic UPI Intent URL
+    upi_payload = f"upi://pay?pa={admin_upi}&pn=PaymentHub&am={amount:.2f}&cu=INR&tn=Subscription_{title}"
+    encoded_payload = urllib.parse.quote(upi_payload)
+    qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_payload}"
+
+    caption = (
+        f"<b>💳 Checkout: {title} Subscription</b>\n\n"
+        f"• <b>Payable Amount:</b> ₹{amount:.2f}\n"
+        f"• <b>Validity Duration:</b> {days} Days\n"
+        f"• <b>UPI ID:</b> <code>{admin_upi}</code>\n\n"
+        f"👉 <b>Scan the QR Code</b> or transfer directly to the UPI ID.\n"
+        f"Once payment is done, send your <b>12-digit UTR</b> below for automatic verification:"
     )
 
-# ----------------- TEXT INPUT PROCESSOR -----------------
-@bot.message_handler(func=lambda m: m.chat.id in admin_states)
-def handle_admin_text_inputs(message):
+    try:
+        bot.send_photo(call.message.chat.id, qr_url, caption=caption, parse_mode="HTML")
+    except Exception:
+        bot.send_message(call.message.chat.id, caption, parse_mode="HTML")
+
+    bot.answer_callback_query(call.id)
+
+# ----------------- TEXT INPUT HANDLER & AUTO VERIFY -----------------
+@bot.message_handler(func=lambda m: m.chat.id in user_states)
+def handle_text_inputs(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
-    state_data = admin_states.get(chat_id, {})
+    state_data = user_states.get(chat_id, {})
     step = state_data.get("step")
     text = message.text.strip()
 
-    if step == "AWAITING_UPI":
-        admin_states.pop(chat_id, None)
-        set_setting("upi_id", text)
-        bot.send_message(chat_id, f"✅ <b>UPI ID Updated:</b> <code>{text}</code>", reply_markup=get_main_keyboard())
+    # Automatic Subscription Payment Verification via UTR
+    if step == "AWAITING_SUB_UTR":
+        utr_match = re.search(r"\b\d{12}\b", text)
+        if not utr_match:
+            bot.send_message(chat_id, "⚠️ Please provide a valid 12-digit numeric UTR number:")
+            return
 
+        utr = utr_match.group(0)
+        expected_amount = state_data["expected_amount"]
+        days = state_data["days"]
+        title = state_data["title"]
+
+        wait_msg = bot.send_message(chat_id, "🔍 Verifying payment with email ledger records...")
+
+        with get_db() as conn:
+            tx_row = conn.execute("SELECT utr FROM transactions WHERE utr = ?", (utr,)).fetchone()
+            if tx_row:
+                bot.edit_message_text("❌ This UTR has already been claimed.", chat_id, wait_msg.message_id)
+                return
+
+            ledger_row = conn.execute("SELECT amount, claimed FROM email_ledger WHERE utr = ?", (utr,)).fetchone()
+            if not ledger_row:
+                bot.edit_message_text(
+                    "⏳ <b>Transaction Not Detected Yet</b>\n\n"
+                    "Your payment alert hasn't synchronized. Please wait 30–60 seconds and submit the UTR again.",
+                    chat_id,
+                    wait_msg.message_id
+                )
+                return
+
+            received_amount = ledger_row["amount"]
+            if ledger_row["claimed"] == 1:
+                bot.edit_message_text("❌ This UTR has already been redeemed.", chat_id, wait_msg.message_id)
+                return
+
+            if received_amount < expected_amount:
+                bot.edit_message_text(
+                    f"⚠️ <b>Partial Amount Detected</b>\n\n"
+                    f"Received: ₹{received_amount:.2f}, Required: ₹{expected_amount:.2f}.",
+                    chat_id,
+                    wait_msg.message_id
+                )
+                return
+
+            # Mark Claimed & Record
+            conn.execute("UPDATE email_ledger SET claimed = 1 WHERE utr = ?", (utr,))
+            conn.execute("INSERT INTO transactions (utr, bot_id, user_id, amount) VALUES (?, 'SUBSCRIPTION', ?, ?)",
+                         (utr, user_id, received_amount))
+
+            # Calculate and update subscription expiration
+            current_sub, exp_str = is_subscribed(user_id)
+            if current_sub and exp_str != "Lifetime (Super Admin)":
+                try:
+                    current_exp = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
+                    new_exp = current_exp + timedelta(days=days)
+                except Exception:
+                    new_exp = datetime.now() + timedelta(days=days)
+            else:
+                new_exp = datetime.now() + timedelta(days=days)
+
+            final_exp = new_exp.strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "INSERT OR REPLACE INTO user_subscriptions (user_id, plan_name, expires_at) VALUES (?, ?, ?)",
+                (user_id, title, final_exp)
+            )
+
+        user_states.pop(chat_id, None)
+
+        bot.edit_message_text(
+            f"🎉 <b>Payment Verified & Subscription Activated!</b>\n\n"
+            f"• <b>Tier:</b> {title}\n"
+            f"• <b>Valid Until:</b> <code>{final_exp}</code>\n"
+            f"• <b>UTR:</b> <code>{utr}</code>\n\n"
+            "Full premium features have been unlocked for your account.",
+            chat_id,
+            wait_msg.message_id
+        )
+
+        try:
+            bot.send_message(
+                ADMIN_ID,
+                f"<b>💰 New Subscription Purchased!</b>\n\n"
+                f"• <b>User ID:</b> <code>{user_id}</code>\n"
+                f"• <b>Tier:</b> {title}\n"
+                f"• <b>Amount:</b> ₹{received_amount:.2f}\n"
+                f"• <b>UTR:</b> <code>{utr}</code>"
+            )
+        except Exception:
+            pass
+        return
+
+    # UPI Setup Step
+    if step == "AWAITING_UPI":
+        user_states.pop(chat_id, None)
+        set_setting("upi_id", text)
+        bot.send_message(chat_id, f"✅ <b>UPI ID Successfully Updated:</b> <code>{text}</code>", reply_markup=get_main_keyboard())
+
+    # Gmail Step
     elif step == "AWAITING_GMAIL":
         if "@" not in text or "." not in text:
-            bot.send_message(chat_id, "❌ Please send a valid email address:")
+            bot.send_message(chat_id, "❌ Please enter a valid email address:")
             return
-        admin_states[chat_id] = {"step": "AWAITING_APP_PASS", "email": text}
+        user_states[chat_id] = {"step": "AWAITING_APP_PASS", "email": text}
         bot.send_message(
             chat_id,
-            f"🔑 <b>Enter 16-Digit Google App Password:</b>\n\n"
-            f"Selected email: <code>{text}</code>\n\n"
-            "Please paste the 16-character App Password:"
+            f"🔑 <b>Google App Password Required</b>\n\n"
+            f"Email: <code>{text}</code>\n\n"
+            "Please enter your 16-character Google App Password:"
         )
 
     elif step == "AWAITING_APP_PASS":
-        app_password = text.replace(" ", "")
+        app_pass = text.replace(" ", "")
         saved_email = state_data.get("email")
-        admin_states.pop(chat_id, None)
+        user_states.pop(chat_id, None)
 
-        wait_msg = bot.send_message(chat_id, "⏳ Testing Gmail IMAP authentication...")
+        wait_msg = bot.send_message(chat_id, "⏳ Validating IMAP credentials with Google...")
         try:
             test_mail = imaplib.IMAP4_SSL(IMAP_SERVER)
-            test_mail.login(saved_email, app_password)
+            test_mail.login(saved_email, app_pass)
             test_mail.logout()
 
             set_setting("email_user", saved_email)
-            set_setting("email_pass", app_password)
+            set_setting("email_pass", app_pass)
 
             bot.edit_message_text(
-                f"<b>🎉 Email Connected & Verified!</b>\n\n"
-                f"<b>Email:</b> <code>{saved_email}</code>",
+                f"<b>🎉 Email Connected Successfully!</b>\n\n"
+                f"<b>Account:</b> <code>{saved_email}</code>",
                 chat_id,
                 wait_msg.message_id
             )
@@ -604,7 +698,7 @@ def handle_admin_text_inputs(message):
             bot.edit_message_text(f"❌ <b>Authentication Failed:</b> <code>{e}</code>", chat_id, wait_msg.message_id)
 
     elif step == "AWAITING_BOT_NAME_FOR_API":
-        admin_states.pop(chat_id, None)
+        user_states.pop(chat_id, None)
         bot_name = text
         bot_id = f"bot_{secrets.token_hex(4)}"
         api_key = f"hub_{secrets.token_hex(16)}"
@@ -617,22 +711,22 @@ def handle_admin_text_inputs(message):
 
         bot.send_message(
             chat_id,
-            f"<b>🔑 API Key Generated Successfully!</b>\n\n"
-            f"<b>Bot Name:</b> {bot_name}\n"
-            f"<b>Bot ID:</b> <code>{bot_id}</code>\n\n"
-            f"<b>API Key:</b>\n<code>{api_key}</code>",
+            f"<b>🔑 API Key Generated!</b>\n\n"
+            f"• <b>Bot:</b> {bot_name}\n"
+            f"• <b>Bot ID:</b> <code>{bot_id}</code>\n\n"
+            f"<b>API Authorization Key:</b>\n<code>{api_key}</code>",
             reply_markup=get_main_keyboard()
         )
 
     elif step == "AWAITING_BOT_TOKEN":
-        admin_states.pop(chat_id, None)
+        user_states.pop(chat_id, None)
         bot_token = text
 
-        wait_msg = bot.send_message(chat_id, "⏳ Verifying bot token with Telegram...")
+        wait_msg = bot.send_message(chat_id, "⏳ Validating bot token with Telegram...")
         try:
             res = requests.get(f"https://api.telegram.org/bot{bot_token}/getMe", timeout=8).json()
             if not res.get("ok"):
-                bot.edit_message_text("❌ Invalid Bot Token!", chat_id, wait_msg.message_id)
+                bot.edit_message_text("❌ Invalid Bot Token provided.", chat_id, wait_msg.message_id)
                 return
 
             client_name = res["result"].get("first_name", "Telegram Bot")
@@ -647,15 +741,15 @@ def handle_admin_text_inputs(message):
                 )
 
             bot.edit_message_text(
-                f"<b>🎉 Bot Connected Successfully!</b>\n\n"
-                f"<b>Name:</b> {client_name}\n"
-                f"<b>Username:</b> @{client_username}\n"
+                f"<b>🎉 Bot Integration Successful!</b>\n\n"
+                f"• <b>Bot Name:</b> {client_name}\n"
+                f"• <b>Username:</b> @{client_username}\n\n"
                 f"<b>API Key:</b>\n<code>{api_key}</code>",
                 chat_id,
                 wait_msg.message_id
             )
         except Exception as e:
-            bot.edit_message_text(f"⚠️️ Error verifying bot: {e}", chat_id, wait_msg.message_id)
+            bot.edit_message_text(f"⚠️ Error verifying bot token: {e}", chat_id, wait_msg.message_id)
 
 # ----------------- CALLBACK QUERY HANDLER -----------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("view_"))
@@ -667,16 +761,14 @@ def handle_view_bot(call):
             bot.answer_callback_query(call.id, "Bot not found.")
             return
 
-        stats = conn.execute(
-            "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM transactions WHERE bot_id = ?", (bot_id,)
-        ).fetchone()
+        stats = conn.execute("SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM transactions WHERE bot_id = ?", (bot_id,)).fetchone()
 
     text = (
         f"<b>🤖 Bot Details: {bot_info['bot_name']}</b>\n\n"
-        f"<b>ID:</b> <code>{bot_id}</code>\n"
-        f"<b>API Key:</b> <code>{bot_info['api_key']}</code>\n"
-        f"<b>Created:</b> {bot_info['created_at']}\n\n"
-        f"<b>Stats:</b> {stats[0]} tx | ₹{stats[1]:.2f}"
+        f"• <b>Bot ID:</b> <code>{bot_id}</code>\n"
+        f"• <b>API Key:</b> <code>{bot_info['api_key']}</code>\n"
+        f"• <b>Connected:</b> {bot_info['created_at']}\n\n"
+        f"<b>📊 Stats:</b> {stats[0]} transactions | ₹{stats[1]:.2f}"
     )
 
     markup = types.InlineKeyboardMarkup()
@@ -689,7 +781,7 @@ def handle_del_bot(call):
     bot_id = call.data.replace("del_", "", 1)
     with get_db() as conn:
         conn.execute("DELETE FROM connected_bots WHERE bot_id = ?", (bot_id,))
-    bot.answer_callback_query(call.id, "Bot deleted successfully!")
+    bot.answer_callback_query(call.id, "Bot deleted.")
     handle_back_list(call)
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_list")
@@ -702,16 +794,16 @@ def handle_back_list(call):
             bots = conn.execute("SELECT bot_id, bot_name FROM connected_bots WHERE owner_id = ?", (user_id,)).fetchall()
 
     if not bots:
-        bot.edit_message_text("🚫 No bots connected yet!", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text("🚫 No bots connected yet.", call.message.chat.id, call.message.message_id)
         return
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     for b in bots:
         markup.add(types.InlineKeyboardButton(f"🤖 {b['bot_name']}", callback_data=f"view_{b['bot_id']}"))
 
-    bot.edit_message_text("📋 <b>Connected Bot List:</b>", call.message.chat.id, call.message.message_id, reply_markup=markup)
+    bot.edit_message_text("📋 <b>Integrated Bots:</b>", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
-# ----------------- RUNNERS -----------------
+# ----------------- BACKGROUND RUNNERS -----------------
 def start_bot_polling():
     while True:
         try:
