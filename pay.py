@@ -16,7 +16,7 @@ import telebot
 from telebot import types
 
 # ----------------- CONFIGURATION -----------------
-BOT_TOKEN = "8737334045:AAEpU1UwBKlcKocRvUoPNfLg5c3xlHI0Gjc"
+BOT_TOKEN = "8737334045:AAGVMhmwp7x8xdb5HhIHG6VvuYm-32f5bdo"
 ADMIN_ID = 5624448603
 BOT_USERNAME = "paymentapisajidbot"
 
