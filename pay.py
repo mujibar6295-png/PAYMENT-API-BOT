@@ -16,10 +16,9 @@ import telebot
 from telebot import types
 
 # ----------------- CONFIGURATION -----------------
-# BotFather theke pawa notun valid token ekhane boshun
-BOT_TOKEN = "8737334045:AAEpU1UwBKlcKocRvUoPNfLg5c3xlHI0Gjc"
+BOT_TOKEN = "YOUR_NEW_BOT_TOKEN_HERE"
 ADMIN_ID = 5624448603
-BOT_USERNAME = "paymentapisajidbot"
+BOT_USERNAME = "BotVerse_Pay_Bot"
 
 PORT = int(os.environ.get("PORT", 5000))
 DB_PATH = "payment_hub.db"
@@ -351,7 +350,7 @@ def cmd_start(message):
     status_badge = f"<b>Active</b> (Until: <code>{exp_date}</code>)" if subscribed else "<b>Free Account</b>"
 
     welcome_msg = (
-        f"<b>👋 Welcome to BotVerse Payment Hub!</b>\n\n"
+        f"<b>👋 Welcome to PAYMENT API BOT!</b>\n\n"
         f"Manage automated UPI payments & real-time UTR verifications for all your Telegram child bots.\n\n"
         f"• <b>Account Status:</b> {status_badge}\n\n"
         f"You can explore all options, configure your UPI, and check tutorials from the keyboard below:"
@@ -399,7 +398,7 @@ def handle_menu_buttons(message):
             )
         return
 
-    # Connect Bot: Only Gate For Paid Users
+    # Connect Bot Gate
     elif message.text == "🔗 Connect Bot":
         subscribed, _ = is_subscribed(user_id)
         if not subscribed:
@@ -426,7 +425,7 @@ def handle_menu_buttons(message):
         curr = get_setting("upi_id", "Not Configured")
         bot.send_message(
             chat_id,
-            f"ℹ️ <b>Current Receiving UPI:</b> <code>{curr}</code>\n\n"
+            f"ℹ️️ <b>Current Receiving UPI:</b> <code>{curr}</code>\n\n"
             "Send the UPI ID where customer payments should go (e.g. <code>username@fam</code>):",
             reply_markup=get_main_keyboard()
         )
@@ -482,31 +481,58 @@ def handle_menu_buttons(message):
 
         bot.send_message(chat_id, msg, reply_markup=get_main_keyboard())
 
-    # Full Detailed Tutorial Section
+    # Full Tutorial + Ready Python Integration Code Guide
     elif message.text == "📖 Tutorial":
         user_states.pop(chat_id, None)
         tutorial_text = (
-            "<b>📖 Complete Setup Tutorial (A-Z Guide)</b>\n\n"
-            "<b>1. Generating Google 16-Digit App Password:</b>\n"
-            "• Open your browser and visit: <a href='https://myaccount.google.com/security'>Google Account Security</a>.\n"
-            "• Ensure that <b>2-Step Verification</b> is turned <b>ON</b>.\n"
-            "• Search for <b>App passwords</b> (or use direct link: <a href='https://myaccount.google.com/apppasswords'>Google App Passwords</a>).\n"
-            "• Type an app name (e.g., <code>Payment Hub</code>) and click <b>Create</b>.\n"
-            "• Copy the generated 16-character code (e.g. <code>abcd efgh ijkl mnop</code>).\n\n"
-            "<b>2. Connecting Email & UPI:</b>\n"
-            "• Tap <b>📧 Set Email</b>: Submit the Gmail address that receives your bank or FamPay transaction alert emails, then enter the 16-digit Google App Password.\n"
-            "• Tap <b>💳 Set UPI</b>: Submit your personal or business receiving UPI ID (e.g. <code>yourname@fam</code> or <code>number@paytm</code>).\n\n"
-            "<b>3. Connecting Your Child Bots:</b>\n"
-            "• Tap <b>💎 Upgrade / Subscribe</b> to activate a subscription tier if you haven't yet.\n"
-            "• Tap <b>🔗 Connect Bot</b> and paste the Telegram Bot Token obtained from @BotFather.\n"
-            "• The system verifies the token and generates a unique <code>API Key</code>.\n"
-            "• Paste that <code>API Key</code> inside your client bot script to enable automated payments.\n\n"
-            "<b>4. How Automatic Verification Works:</b>\n"
-            "• When a user makes a payment to your dynamic UPI QR, your bank sends an instant email alert to your connected Gmail.\n"
-            "• The background IMAP engine reads the email, extracts the 12-digit UTR and payment amount in real-time.\n"
-            "• The moment the buyer submits their 12-digit UTR, payment is verified and confirmed automatically within seconds!"
+            "<b>📖 Complete Setup & Integration Tutorial (A-Z)</b>\n\n"
+            "<b>1. Generate Google App Password:</b>\n"
+            "• Enable 2-Step Verification in Google Account Security.\n"
+            "• Create an App password and obtain your 16-character code.\n\n"
+            "<b>2. Connect Credentials:</b>\n"
+            "• Tap <b>📧 Set Email</b>: Submit your Gmail and 16-character App Password.\n"
+            "• Tap <b>💳 Set UPI</b>: Submit your receiving UPI ID.\n\n"
+            "<b>3. Connect Child Bot:</b>\n"
+            "• Tap <b>🔗 Connect Bot</b> and send your Bot Token from @BotFather to get your <code>API Key</code>.\n\n"
+            "<b>4. Python Integration Guide (AI Assistance):</b>\n"
+            "Nicher message-e thaka Python code copy korun ebong Gemini-te giye bolun:\n"
+            "<i>\"Ei code ta amar bot-er code-er sathe connect kore payment & auto-UTR verification add kore dao.\"</i>\n"
+            "Gemini apnar bot-e payment module integrate kore debe!"
         )
-        bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard(), disable_web_page_preview=True)
+        bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard())
+
+        # One-Click Copyable Client Code Snippet
+        client_code_sample = (
+            "<code>"
+            "# ================= PAYMENT API BOT INTEGRATION =================\n"
+            "import requests\n"
+            "import urllib.parse\n\n"
+            "PAYMENT_API_URL = \"https://payment-api-bot.onrender.com\"\n"
+            "MY_API_KEY = \"PASTE_YOUR_API_KEY_HERE\"  # Got from Connect Bot\n\n"
+            "# 1. Function to Get Your UPI ID\n"
+            "def get_gateway_upi():\n"
+            "    headers = {\"Authorization\": f\"Bearer {MY_API_KEY}\"}\n"
+            "    res = requests.get(f\"{PAYMENT_API_URL}/api/get-upi\", headers=headers).json()\n"
+            "    return res.get(\"upi_id\")\n\n"
+            "# 2. Function to Generate Dynamic QR Image URL\n"
+            "def generate_qr(amount, note=\"Payment\"):\n"
+            "    upi_id = get_gateway_upi()\n"
+            "    payload = f\"upi://pay?pa={upi_id}&pn=Payment&am={amount:.2f}&cu=INR&tn={note}\"\n"
+            "    return f\"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(payload)}\"\n\n"
+            "# 3. Function to Automatically Verify UTR\n"
+            "def verify_payment_utr(utr_number, expected_amount, customer_user_id):\n"
+            "    headers = {\"Authorization\": f\"Bearer {MY_API_KEY}\"}\n"
+            "    payload = {\n"
+            "        \"utr\": str(utr_number).strip(),\n"
+            "        \"amount\": float(expected_amount),\n"
+            "        \"user_id\": customer_user_id\n"
+            "    }\n"
+            "    response = requests.post(f\"{PAYMENT_API_URL}/api/verify-utr\", headers=headers, json=payload)\n"
+            "    return response.json()\n"
+            "# ==============================================================\n"
+            "</code>"
+        )
+        bot.send_message(chat_id, client_code_sample, parse_mode="HTML")
 
 # ----------------- SUBSCRIPTION PLAN CALLBACKS & DYNAMIC QR -----------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
@@ -731,7 +757,7 @@ def handle_text_inputs(message):
                 wait_msg.message_id
             )
         except Exception as e:
-            bot.edit_message_text(f"⚠️️ Error verifying bot token: {e}", chat_id, wait_msg.message_id)
+            bot.edit_message_text(f"⚠️ Error verifying bot token: {e}", chat_id, wait_msg.message_id)
 
 # ----------------- CALLBACK QUERY HANDLER -----------------
 @bot.callback_query_handler(func=lambda call: call.data.startswith("view_"))
