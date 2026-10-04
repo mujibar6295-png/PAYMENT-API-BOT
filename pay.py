@@ -16,9 +16,9 @@ import telebot
 from telebot import types
 
 # ----------------- CONFIGURATION -----------------
-BOT_TOKEN = "8737334045:AAFa_BKZATJ1gzauyDZWQee7BDSs84LMo9k"
+BOT_TOKEN = "8737334045:AAEpU1UwBKlcKocRvUoPNfLg5c3xlHI0Gjc"
 ADMIN_ID = 5624448603
-BOT_USERNAME = "BotVerse_Pay_Bot"
+BOT_USERNAME = "@paymentapisajidbot"
 
 PORT = int(os.environ.get("PORT", 5000))
 DB_PATH = "payment_hub.db"
