@@ -16,9 +16,9 @@ import telebot
 from telebot import types
 
 # ----------------- CONFIGURATION -----------------
-BOT_TOKEN = "8737334045:AAEpU1UwBKlcKocRvUoPNfLg5c3xlHI0Gjc"
+BOT_TOKEN = "YOUR_NEW_BOT_TOKEN_HERE"
 ADMIN_ID = 5624448603
-BOT_USERNAME = "paymentapisajidbot"
+BOT_USERNAME = "BotVerse_Pay_Bot"
 
 PORT = int(os.environ.get("PORT", 5000))
 DB_PATH = "payment_hub.db"
@@ -398,7 +398,7 @@ def handle_menu_buttons(message):
             )
         return
 
-    # Connect Bot Gate
+    # Connect Bot Gate (Only Paid Users)
     elif message.text == "🔗 Connect Bot":
         subscribed, _ = is_subscribed(user_id)
         if not subscribed:
@@ -425,7 +425,7 @@ def handle_menu_buttons(message):
         curr = get_setting("upi_id", "Not Configured")
         bot.send_message(
             chat_id,
-            f"ℹ️️ <b>Current Receiving UPI:</b> <code>{curr}</code>\n\n"
+            f"ℹ️ <b>Current Receiving UPI:</b> <code>{curr}</code>\n\n"
             "Send the UPI ID where customer payments should go (e.g. <code>username@fam</code>):",
             reply_markup=get_main_keyboard()
         )
@@ -481,23 +481,22 @@ def handle_menu_buttons(message):
 
         bot.send_message(chat_id, msg, reply_markup=get_main_keyboard())
 
-    # Full Tutorial + Ready Python Integration Code Guide
+    # Full Tutorial + Ready Python Integration Code Guide (100% English)
     elif message.text == "📖 Tutorial":
         user_states.pop(chat_id, None)
         tutorial_text = (
-            "<b>📖 Complete Setup & Integration Tutorial (A-Z)</b>\n\n"
+            "<b>📖 Complete Setup & Integration Guide (A-Z)</b>\n\n"
             "<b>1. Generate Google App Password:</b>\n"
-            "• Enable 2-Step Verification in Google Account Security.\n"
-            "• Create an App password and obtain your 16-character code.\n\n"
-            "<b>2. Connect Credentials:</b>\n"
-            "• Tap <b>📧 Set Email</b>: Submit your Gmail and 16-character App Password.\n"
-            "• Tap <b>💳 Set UPI</b>: Submit your receiving UPI ID.\n\n"
+            "• Enable 2-Step Verification in your Google Account Security.\n"
+            "• Search for 'App passwords', create one, and copy the 16-character code.\n\n"
+            "<b>2. Configure Credentials:</b>\n"
+            "• Tap <b>📧 Set Email</b>: Provide your alert Gmail and the 16-digit App Password.\n"
+            "• Tap <b>💳 Set UPI</b>: Provide your receiving UPI ID.\n\n"
             "<b>3. Connect Child Bot:</b>\n"
-            "• Tap <b>🔗 Connect Bot</b> and send your Bot Token from @BotFather to get your <code>API Key</code>.\n\n"
+            "• Tap <b>🔗 Connect Bot</b> and send your bot token from @BotFather to generate your private <code>API Key</code>.\n\n"
             "<b>4. Python Integration Guide (AI Assistance):</b>\n"
-            "Nicher message-e thaka Python code copy korun ebong Gemini-te giye bolun:\n"
-            "<i>\"Ei code ta amar bot-er code-er sathe connect kore payment & auto-UTR verification add kore dao.\"</i>\n"
-            "Gemini apnar bot-e payment module integrate kore debe!"
+            "Copy the snippet below and paste it into Gemini along with your bot code, saying:\n"
+            "<i>\"Integrate this payment and auto-UTR verification module into my bot code.\"</i>"
         )
         bot.send_message(chat_id, tutorial_text, reply_markup=get_main_keyboard())
 
@@ -508,8 +507,8 @@ def handle_menu_buttons(message):
             "import requests\n"
             "import urllib.parse\n\n"
             "PAYMENT_API_URL = \"https://payment-api-bot.onrender.com\"\n"
-            "MY_API_KEY = \"PASTE_YOUR_API_KEY_HERE\"  # Got from Connect Bot\n\n"
-            "# 1. Function to Get Your UPI ID\n"
+            "MY_API_KEY = \"PASTE_YOUR_API_KEY_HERE\"  # Generated from Connect Bot\n\n"
+            "# 1. Function to Get Active Gateway UPI\n"
             "def get_gateway_upi():\n"
             "    headers = {\"Authorization\": f\"Bearer {MY_API_KEY}\"}\n"
             "    res = requests.get(f\"{PAYMENT_API_URL}/api/get-upi\", headers=headers).json()\n"
@@ -519,7 +518,7 @@ def handle_menu_buttons(message):
             "    upi_id = get_gateway_upi()\n"
             "    payload = f\"upi://pay?pa={upi_id}&pn=Payment&am={amount:.2f}&cu=INR&tn={note}\"\n"
             "    return f\"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(payload)}\"\n\n"
-            "# 3. Function to Automatically Verify UTR\n"
+            "# 3. Function to Verify UTR Automatically\n"
             "def verify_payment_utr(utr_number, expected_amount, customer_user_id):\n"
             "    headers = {\"Authorization\": f\"Bearer {MY_API_KEY}\"}\n"
             "    payload = {\n"
